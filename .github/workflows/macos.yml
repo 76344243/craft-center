@@ -1,0 +1,35 @@
+# Baut die Craft-Zentrale für Apple-Silicon-Macs bei jedem Push auf main und veröffentlicht die
+# DMG als Release. Der ArtCraft-Updater installiert sie von dort.
+name: Mac-Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: macos
+  cancel-in-progress: true
+
+jobs:
+  mac:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Test
+        run: cargo test
+      - name: Build and package
+        run: packaging/package-macos.sh
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="mein-stand-$(date -u +%Y%m%d)-${GITHUB_RUN_NUMBER}"
+          gh release create "$tag" dist/*.dmg --title "$tag" --notes "$(git log -1 --format='%h %s')" --target "$GITHUB_SHA"

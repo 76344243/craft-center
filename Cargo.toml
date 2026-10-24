@@ -1,0 +1,24 @@
+[package]
+name = "craft-center"
+version = "0.1.0"
+edition = "2024"
+description = "Craft-Zentrale: Stand der Forks, installierte Versionen und Updates der angepassten ArtCraft-Apps"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+eframe = { version = "0.36", default-features = false, features = ["default_fonts", "glow", "accesskit"] }
+egui = "0.36"
+ureq = { version = "3", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+plist = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+strip = true
+
+# Linux only for looking at the window during development (a virtual X display).
+[target.'cfg(target_os = "linux")'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["x11"] }
