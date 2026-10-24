@@ -139,6 +139,17 @@ update_app() {
   notify "$name wurde aktualisiert."
 }
 
+# Sich selbst aktuell halten: die neueste Fassung dieses Skripts (mit der App-Liste) liegt im
+# Repository der Craft-Zentrale. Sie gilt ab dem nächsten Durchlauf; eine fehlerhafte wird verworfen.
+SELF_URL="https://raw.githubusercontent.com/$OWNER/craft-center/main/updater/craft-update.sh"
+SELF_PATH="$STATE/craft-update.sh"
+if /usr/bin/curl -fsSL --max-time 30 -o "$TMP/self.sh" "$SELF_URL" \
+    && /bin/bash -n "$TMP/self.sh" && grep -q '^APPS=(' "$TMP/self.sh" \
+    && ! cmp -s "$TMP/self.sh" "$SELF_PATH"; then
+  cp "$TMP/self.sh" "$SELF_PATH.new" && chmod 755 "$SELF_PATH.new" && mv "$SELF_PATH.new" "$SELF_PATH" \
+    && log "Updater: neue Fassung übernommen (gilt ab dem nächsten Durchlauf)"
+fi
+
 for entry in "${APPS[@]}"; do
   update_app "${entry%%:*}" "${entry#*:}"
 done
