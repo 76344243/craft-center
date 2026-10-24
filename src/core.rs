@@ -322,16 +322,11 @@ impl Lock {
         let lock = dir.join("lock");
         for _ in 0..120 {
             if std::fs::create_dir(&lock).is_ok() {
+                let _ = std::fs::write(lock.join("pid"), format!("{}\n", std::process::id()));
                 return Ok(Lock(lock));
             }
-            // A lock older than two hours was left by a run that died.
-            let stale = std::fs::metadata(&lock)
-                .and_then(|m| m.modified())
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .is_some_and(|age| age > Duration::from_secs(7200));
-            if stale {
-                let _ = std::fs::remove_dir(&lock);
+            if lock_is_stale(&lock) {
+                let _ = std::fs::remove_dir_all(&lock);
                 continue;
             }
             std::thread::sleep(Duration::from_secs(1));
@@ -343,9 +338,28 @@ impl Lock {
     }
 }
 
+/// Whether the lock was left behind: the process named in it no longer runs, or (no name in
+/// it) it is older than ten minutes. Same rule as `craft-update.sh`.
+fn lock_is_stale(lock: &Path) -> bool {
+    match std::fs::read_to_string(lock.join("pid"))
+        .ok()
+        .and_then(|p| p.trim().parse::<u32>().ok())
+    {
+        Some(pid) => !Command::new("/bin/kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .is_ok_and(|o| o.status.success()),
+        None => std::fs::metadata(lock)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age > Duration::from_secs(600)),
+    }
+}
+
 impl Drop for Lock {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir(&self.0);
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
@@ -587,6 +601,19 @@ mod tests {
         assert_eq!(compare(Some(&inst(None)), Some(&r)), Match::Unknown);
         assert_eq!(compare(None, Some(&r)), Match::Missing);
         assert_eq!(compare(Some(&inst(Some("b"))), None), Match::NoRelease);
+    }
+
+    #[test]
+    fn a_lock_whose_process_is_gone_is_stale() {
+        let dir = std::env::temp_dir().join(format!("cc-lock-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(!lock_is_stale(&dir), "a fresh lock without a pid is kept");
+        std::fs::write(dir.join("pid"), format!("{}\n", std::process::id())).unwrap();
+        assert!(!lock_is_stale(&dir), "our own process is running");
+        std::fs::write(dir.join("pid"), "999999999\n").unwrap();
+        assert!(lock_is_stale(&dir), "a process that doesn't exist");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -32,6 +32,8 @@ cat >"$PLIST" <<EOF
 EOF
 
 /bin/launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+# Eine Sperre des eben beendeten Laufs aufräumen.
+rm -rf "$DIR/lock"
 /bin/launchctl bootstrap "gui/$(id -u)" "$PLIST"
 
 echo "Fertig. Der Updater prüft jetzt und danach alle 2 Stunden auf neue Versionen."

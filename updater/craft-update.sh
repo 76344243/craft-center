@@ -25,24 +25,40 @@ exec >>"$LOG" 2>&1
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') $*"; }
 notify() { /usr/bin/osascript -e "display notification \"$1\" with title \"ArtCraft-Updater\"" >/dev/null 2>&1 || true; }
 
-# Nur ein Durchlauf gleichzeitig.
+# Nur ein Durchlauf gleichzeitig. Die Sperre nennt den Prozess, der sie hält; gehört sie einem
+# Prozess, der nicht mehr läuft (abgebrochen, beim Neueinrichten beendet), wird sie übernommen.
 LOCK="$STATE/lock"
-if ! mkdir "$LOCK" 2>/dev/null; then
-  # Eine Sperre älter als 2 Stunden stammt von einem abgebrochenen Lauf.
-  if [[ -n "$(find "$LOCK" -maxdepth 0 -mmin +120 2>/dev/null)" ]]; then
-    rmdir "$LOCK" 2>/dev/null; mkdir "$LOCK" 2>/dev/null || exit 0
-  else
-    exit 0
+take_lock() {
+  if mkdir "$LOCK" 2>/dev/null; then
+    echo $$ >"$LOCK/pid"
+    return 0
   fi
+  local holder
+  holder="$(cat "$LOCK/pid" 2>/dev/null)"
+  if [[ -n "$holder" ]] && kill -0 "$holder" 2>/dev/null; then
+    return 1
+  fi
+  # Ohne PID (ältere Fassung, Craft-Zentrale) gilt sie nach 10 Minuten als verwaist.
+  if [[ -z "$holder" && -z "$(find "$LOCK" -maxdepth 0 -mmin +10 2>/dev/null)" ]]; then
+    return 1
+  fi
+  log "Verwaiste Sperre entfernt"
+  rm -rf "$LOCK"
+  mkdir "$LOCK" 2>/dev/null && echo $$ >"$LOCK/pid"
+}
+if ! take_lock; then
+  log "Ein anderer Durchlauf ist gerade aktiv, dieser wird übersprungen"
+  exit 0
 fi
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/craft-update.XXXXXX")"
 MOUNT=""
 cleanup() {
   [[ -n "$MOUNT" ]] && /usr/bin/hdiutil detach -quiet "$MOUNT" >/dev/null 2>&1
   rm -rf "$TMP"
-  rmdir "$LOCK" 2>/dev/null
+  rm -rf "$LOCK"
 }
 trap cleanup EXIT
+trap 'exit 1' TERM INT HUP
 
 # Version (tag) und Download-Adresse der ersten .dmg aus der Release-Info, eine pro Zeile.
 # JavaScript for Automation ist auf jedem Mac dabei (plutil scheitert an JSON-null).
@@ -150,6 +166,7 @@ if /usr/bin/curl -fsSL --max-time 30 -o "$TMP/self.sh" "$SELF_URL" \
     && log "Updater: neue Fassung übernommen (gilt ab dem nächsten Durchlauf)"
 fi
 
+log "Prüfe ${#APPS[@]} Apps"
 for entry in "${APPS[@]}"; do
   update_app "${entry%%:*}" "${entry#*:}"
 done
