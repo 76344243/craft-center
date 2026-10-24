@@ -17,6 +17,13 @@ APPS=(
   "craft-center:CraftCenter"
 )
 
+# Standard-Apps: Dateityp (UTI) = Kennung der App. Acrobat und Office holen sich diese Typen
+# gern still zurück; jeder Durchlauf stellt sie wieder auf die Craft-Apps (nur wenn installiert).
+DEFAULTS=(
+  "com.adobe.pdf=ai.storyteller.pdfcraft=PdfCraft"
+  "org.openxmlformats.wordprocessingml.document=ai.storyteller.wordcraft=WordCraft"
+)
+
 STATE="$HOME/Library/Application Support/ArtCraft-Updater"
 LOG="$HOME/Library/Logs/ArtCraft-Updater.log"
 mkdir -p "$STATE" "$(dirname "$LOG")"
@@ -166,7 +173,43 @@ if /usr/bin/curl -fsSL --max-time 30 -o "$TMP/self.sh" "$SELF_URL" \
     && log "Updater: neue Fassung übernommen (gilt ab dem nächsten Durchlauf)"
 fi
 
+# Setzt die Standard-Apps aus DEFAULTS, wo sie abweichen; gibt je Änderung eine Zeile aus.
+enforce_defaults() {
+  local pairs=() entry uti id name
+  for entry in "${DEFAULTS[@]}"; do
+    IFS='=' read -r uti id name <<<"$entry"
+    if [[ -d "/Applications/$name.app" || -d "$HOME/Applications/$name.app" ]]; then
+      pairs+=("$uti=$id")
+    fi
+  done
+  [[ ${#pairs[@]} -eq 0 ]] && return
+  /usr/bin/osascript -l JavaScript - "${pairs[@]}" <<'JS'
+function run(argv) {
+  ObjC.import('CoreServices');
+  const ALL = 0xFFFFFFFF; // kLSRolesAll
+  const out = [];
+  for (const pair of argv) {
+    const [uti, app] = pair.split('=');
+    let current = '';
+    try {
+      const ref = $.LSCopyDefaultRoleHandlerForContentType($(uti), ALL);
+      current = ref ? ObjC.unwrap(ObjC.castRefToObject(ref)) || '' : '';
+    } catch (e) { current = '?'; }
+    if (current.toLowerCase() === app.toLowerCase()) continue;
+    const err = $.LSSetDefaultRoleHandlerForContentType($(uti), ALL, $(app));
+    out.push('Standard-App ' + uti + ': ' + (current || 'keine') + ' -> ' + app + (err === 0 ? '' : ' (Fehler ' + err + ')'));
+  }
+  return out.join('\n');
+}
+JS
+}
+
 log "Prüfe ${#APPS[@]} Apps"
 for entry in "${APPS[@]}"; do
   update_app "${entry%%:*}" "${entry#*:}"
 done
+
+# Nach den Installationen, damit eine frisch installierte App gleich zugeordnet wird.
+while IFS= read -r line; do
+  [[ -n "$line" ]] && log "$line"
+done < <(enforce_defaults 2>&1)
