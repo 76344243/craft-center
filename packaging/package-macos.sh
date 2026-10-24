@@ -30,14 +30,19 @@ cat >"$APP/Contents/Info.plist" <<PLIST
 PLIST
 
 # Symbol: ein abgerundetes Quadrat mit einem Pfeil im Kreis, aus dem Code gezeichnet.
-if command -v swift >/dev/null; then
-  ICONSET="dist/AppIcon.iconset"; mkdir -p "$ICONSET"
-  swift packaging/make-icon.swift "dist/icon-1024.png"
+# Fails softly: without an icon the app still builds (macOS shows a generic one).
+make_icon() {
+  local iconset="dist/AppIcon.iconset"
+  mkdir -p "$iconset"
+  swift packaging/make-icon.swift "dist/icon-1024.png" || return 1
   for s in 16 32 128 256 512; do
-    sips -z $s $s dist/icon-1024.png --out "$ICONSET/icon_${s}x${s}.png" >/dev/null
-    d=$((s * 2)); sips -z $d $d dist/icon-1024.png --out "$ICONSET/icon_${s}x${s}@2x.png" >/dev/null
+    sips -z $s $s dist/icon-1024.png --out "$iconset/icon_${s}x${s}.png" >/dev/null || return 1
+    d=$((s * 2)); sips -z $d $d dist/icon-1024.png --out "$iconset/icon_${s}x${s}@2x.png" >/dev/null || return 1
   done
-  iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
+  iconutil -c icns "$iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+}
+if command -v swift >/dev/null; then
+  make_icon || echo "warning: no app icon"
 fi
 
 codesign --force --deep --sign - "$APP"

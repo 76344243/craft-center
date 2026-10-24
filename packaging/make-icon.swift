@@ -13,7 +13,7 @@ arc.lineCapStyle = .round
 NSColor.white.setStroke()
 arc.stroke()
 let head = NSBezierPath()
-let tip = NSPoint(x: 512 + 250 * cos(60 * .pi / 180), y: 512 + 250 * sin(60 * .pi / 180))
+let tip = NSPoint(x: 512 + 250 * cos(Double.pi / 3), y: 512 + 250 * sin(Double.pi / 3))
 head.move(to: NSPoint(x: tip.x - 120, y: tip.y + 60))
 head.line(to: NSPoint(x: tip.x + 40, y: tip.y + 40))
 head.line(to: NSPoint(x: tip.x - 10, y: tip.y - 120))
